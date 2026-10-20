@@ -1,0 +1,12 @@
+# .gitignore — arquivos que NÃO vão para o GitHub
+# Pacotes baixados pelo 'npm install' (podem ser recriados a qualquer momento)
+node_modules
+# Pasta gerada por 'npm run build'
+dist
+# Variáveis secretas (senhas e chaves do banco): NUNCA publique
+.env
+.env.*
+# ...exceto o modelo sem segredos
+!.env.example
+# Configuração local da Vercel
+.vercel
