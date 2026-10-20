@@ -1,0 +1,40 @@
+/* Tema da Cozinha da Tere sobre o Bootstrap 5 */
+/* VARIÁVEIS DO BOOTSTRAP: --bs-primary é o vermelho da marca (botões, links); troque aqui para mudar a cor em todo o site. */
+:root{--bs-primary:#e3342a;--bs-primary-rgb:227,52,42;--bs-link-color:#e3342a;--bs-body-font-family:'Work Sans',system-ui,sans-serif}
+/* Fundo creme da página. O padding de baixo evita que a barra do carrinho cubra o último produto. */
+body{background:#fff7ea;padding-bottom:90px}
+/* Títulos usam a fonte Fraunces (carregada no index.html). */
+h1,h2,h3,h4,h5,.brand{font-family:Fraunces,Georgia,serif}
+/* .btn-primary: botão vermelho cheio (variáveis do próprio Bootstrap para normal, hover e clique). */
+.btn-primary{--bs-btn-bg:#e3342a;--bs-btn-border-color:#e3342a;--bs-btn-hover-bg:#c92a21;--bs-btn-hover-border-color:#c92a21;--bs-btn-active-bg:#b1241c;--bs-btn-active-border-color:#b1241c}
+/* .btn-outline-primary: botão só com contorno vermelho. */
+.btn-outline-primary{--bs-btn-color:#e3342a;--bs-btn-border-color:#e3342a;--bs-btn-hover-bg:#e3342a;--bs-btn-hover-border-color:#e3342a;--bs-btn-active-bg:#e3342a;--bs-btn-active-border-color:#e3342a}
+/* Barra do topo: degradê vermelho com linha amarela embaixo. */
+.topbar{background:linear-gradient(90deg,#e3342a,#ef4a30);border-bottom:3px solid #ffb400}
+/* Faixa de boas-vindas da loja (degradê vermelho → laranja). */
+.hero{background:linear-gradient(100deg,#e3342a,#f89a1c);color:#fff;border-radius:1.25rem}
+/* CARTÃO DE PRODUTO. 'position: relative' permite posicionar o botão + e a etiqueta Novidade sobre ele. */
+.pcard{position:relative;border:0;border-radius:1rem;box-shadow:0 2px 8px #0001}
+/* Área da foto: tamanho fixo; a imagem preenche com recorte (object-fit: cover). Sem foto mostra o emoji. */
+.pcard .ph{height:100px;background:#fff6e6;display:flex;align-items:center;justify-content:center;font-size:2.6rem;overflow:hidden;border-radius:.75rem}
+.pcard .ph img{width:100%;height:100%;object-fit:cover}
+/* Preço em verde, fonte de título. */
+.pcard .price{font-family:Fraunces,serif;color:#2e9b4e;font-size:1.15rem;font-weight:700}
+/* Nome do produto: altura mínima de 2 linhas para os cartões ficarem alinhados. */
+.pcard .nm{min-height:2.4rem;font-weight:600;font-size:.9rem}
+/* Botão redondo '+' no canto da foto. */
+.add{position:absolute;right:.75rem;top:82px;width:36px;height:36px;border-radius:50%;padding:0;font-size:1.3rem;line-height:1}
+/* Etiqueta 'Novidade'. */
+.tagnew{position:absolute;left:.75rem;top:.75rem;z-index:1}
+/* Barra do carrinho fixa no rodapé; respeita a área segura de celulares com 'notch'. */
+.cartbar{position:fixed;left:0;right:0;bottom:0;z-index:1030;padding-bottom:env(safe-area-inset-bottom)}
+/* Foto de perfil redonda no topo. */
+.avatar{width:40px;height:40px;border-radius:50%;object-fit:cover;border:2px solid #ffb400}
+/* Selo verde com o nome da equipe. */
+.team{background:#16a085}
+/* Quadros coloridos de estatística no painel da administração. */
+.stat{color:#fff;border-radius:1rem;padding:1rem}.stat b{font:700 1.4rem Fraunces,serif;display:block}
+/* Área dos avisos (fixa no topo). Não bloqueia cliques fora do aviso. */
+.toast-wrap{position:fixed;top:.75rem;left:.75rem;right:.75rem;z-index:2000;pointer-events:none;display:flex;justify-content:flex-end}
+/* O aviso em si volta a aceitar cliques. */
+.toast-wrap .toast{pointer-events:auto;max-width:100%}
