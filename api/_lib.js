@@ -5,6 +5,7 @@
 import { neon } from '@neondatabase/serverless';
 import jwt from 'jsonwebtoken';
 import bcrypt from 'bcryptjs';
+import { USERS } from './_users.js';
 
 /* Endereço do banco. A Vercel cria DATABASE_URL ao conectar o Neon (aceita também POSTGRES_URL). */
 const URL_DB = process.env.DATABASE_URL || process.env.POSTGRES_URL;
@@ -41,8 +42,17 @@ const TABELAS = [
 ];
 /* Guarda a promessa de criação das tabelas: roda uma vez por instância do servidor. */
 let pronto;
-/* Cria as tabelas que ainda não existem (se já existem, não faz nada). */
-export const ensure = () => (pronto ??= (async () => { for (const t of TABELAS) await sql.query(t); })());
+/* Grava os usuários de _users.js na tabela users, uma única vez (marca 'users_seeded' em settings). on conflict do nothing = quem já existe não é alterado (a senha trocada no site é mantida). Se falhar, só registra o erro e o site continua. */
+const seedUsers = async () => {
+  try {
+    const [feito] = await sql`select 1 from settings where key='users_seeded'`;
+    if (feito || !USERS.length) return;
+    await sql`insert into users(phone,name,team,hash,created_at) select * from unnest(${USERS.map((u) => u[0])}::text[], ${USERS.map((u) => u[1])}::text[], ${USERS.map((u) => u[2])}::text[], ${USERS.map((u) => u[3])}::text[], ${USERS.map((u) => u[4])}::timestamptz[]) on conflict (phone) do nothing`;
+    await sql`insert into settings(key,value) values('users_seeded','true') on conflict do nothing`;
+  } catch (e) { console.error('seedUsers', e); }
+};
+/* Cria as tabelas que ainda não existem (se já existem, não faz nada) e carrega os usuários iniciais. */
+export const ensure = () => (pronto ??= (async () => { for (const t of TABELAS) await sql.query(t); await seedUsers(); })());
 
 /* Gera o token (crachá) assinado com JWT_SECRET. exp = validade (usuário 30 dias, admin 12 h). */
 export const sign = (payload, exp = '30d') => jwt.sign(payload, process.env.JWT_SECRET, { expiresIn: exp });
