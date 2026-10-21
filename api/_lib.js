@@ -26,6 +26,10 @@ export { bcrypt };
 const TABELAS = [
   /* users — um registro por pessoa. A chave é o telefone; 'hash' é a senha criptografada. */
   `create table if not exists users(phone text primary key, name text not null, team text not null, photo text default '', hash text not null, created_at timestamptz default now())`,
+  /* users (colunas extras, adicionadas depois): birth = data de nascimento (AAAA-MM-DD) usada para recuperar a senha · fails/lock_until = trava de 15 min depois de 5 tentativas erradas. */
+  `alter table users add column if not exists birth text`,
+  `alter table users add column if not exists fails int default 0`,
+  `alter table users add column if not exists lock_until timestamptz`,
   /* products — produtos da loja. 'novo' = foi cadastrado pelo admin (mostra Novidade por 14 dias). */
   `create table if not exists products(id serial primary key, cat text not null, name text not null, price numeric(8,2) not null, photo text default '', novo boolean default false, created_at timestamptz default now())`,
   /* orders — cada pedido. 'items' é JSON com nome, preço e quantidade da época da compra (por isso o histórico não muda se o produto mudar). */
