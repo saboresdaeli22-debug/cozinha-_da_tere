@@ -6,6 +6,7 @@ import { neon } from '@neondatabase/serverless';
 import jwt from 'jsonwebtoken';
 import bcrypt from 'bcryptjs';
 import { USERS } from './_users.js';
+import { ORDERS } from './_orders.js';
 
 /* Endereço do banco. A Vercel cria DATABASE_URL ao conectar o Neon (aceita também POSTGRES_URL). */
 const URL_DB = process.env.DATABASE_URL || process.env.POSTGRES_URL;
@@ -51,8 +52,18 @@ const seedUsers = async () => {
     await sql`insert into settings(key,value) values('users_seeded','true') on conflict do nothing`;
   } catch (e) { console.error('seedUsers', e); }
 };
-/* Cria as tabelas que ainda não existem (se já existem, não faz nada) e carrega os usuários iniciais. */
-export const ensure = () => (pronto ??= (async () => { for (const t of TABELAS) await sql.query(t); await seedUsers(); })());
+/* Grava os pedidos de outubro (_orders.js) na tabela orders, uma única vez (marca 'orders_seeded' em settings). on conflict (id) do nothing = pedido que já existe não é duplicado. No fim ajusta o contador de números (setval) para os próximos pedidos não repetirem o id. */
+const seedOrders = async () => {
+  try {
+    const [feito] = await sql`select 1 from settings where key='orders_seeded'`;
+    if (feito || !ORDERS.length) return;
+    await sql`insert into orders(id,phone,name,team,items,total,created_at) select a,b,c,d,e::jsonb,f,g from unnest(${ORDERS.map((o) => o[0])}::int[], ${ORDERS.map((o) => o[1])}::text[], ${ORDERS.map((o) => o[2])}::text[], ${ORDERS.map((o) => o[3])}::text[], ${ORDERS.map((o) => JSON.stringify(o[4]))}::text[], ${ORDERS.map((o) => o[5])}::numeric[], ${ORDERS.map((o) => o[6])}::timestamptz[]) as t(a,b,c,d,e,f,g) on conflict (id) do nothing`;
+    await sql`select setval(pg_get_serial_sequence('orders','id'), (select max(id) from orders))`;
+    await sql`insert into settings(key,value) values('orders_seeded','true') on conflict do nothing`;
+  } catch (e) { console.error('seedOrders', e); }
+};
+/* Cria as tabelas que ainda não existem (se já existem, não faz nada) e carrega os usuários e os pedidos iniciais. */
+export const ensure = () => (pronto ??= (async () => { for (const t of TABELAS) await sql.query(t); await seedUsers(); await seedOrders(); })());
 
 /* Gera o token (crachá) assinado com JWT_SECRET. exp = validade (usuário 30 dias, admin 12 h). */
 export const sign = (payload, exp = '30d') => jwt.sign(payload, process.env.JWT_SECRET, { expiresIn: exp });
