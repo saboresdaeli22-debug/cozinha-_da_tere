@@ -8,10 +8,10 @@ Loja de cantina para o trabalho: o funcionário se cadastra, pega o que quiser n
 
 | Aba | O que faz |
 |---|---|
-| Cadastro | Nome, número, equipe (EVA, VIVA, ED, BANCAR, DEV), foto e senha. Login = número + senha. |
+| Cadastro | Nome, número, equipe (EVA, VIVA, ED, BANCAR, DEV), **data de nascimento** e senha. Login = número + senha. Tem **Esqueci minha senha**. |
 | Meus gastos | Escolhe o mês e vê tudo o que consumiu; cria uma nova senha. |
-| Loja | Almoço da semana, 4 categorias, carrinho. Foto do usuário no canto superior direito. |
-| Administração | **Usuários cadastrados separados por equipe**, pedidos em tempo real com aviso, almoço da semana, novo produto, **remover produto**, fechamento em PDF/CSV, troca de login e senha. |
+| Loja | Almoço da semana, 4 categorias, carrinho. No canto superior direito aparece um círculo com a inicial do nome. |
+| Administração | **Usuários cadastrados separados por equipe**, pedidos em tempo real com aviso (e ✕ para remover um item de um pedido), **% de armazenamento do banco**, almoço da semana, novo produto, **remover produto**, fechamento em PDF/CSV, troca de login e senha. |
 
 Tempo real: a página consulta a API a cada poucos segundos (15 s na administração). Quando um produto é removido, **todo mundo recebe o aviso** "🗑️ produto foi removido da loja".
 
@@ -45,27 +45,29 @@ Ao mexer no código, mantenha o hábito: escreva um comentário curto dizendo **
 ## Tutorial de uso do site
 
 ### Para os funcionários
-1. **Primeiro acesso:** abra o link, toque em **Criar conta** e preencha nome, número de celular, equipe, foto de perfil e uma senha (mín. 6 caracteres). Toque em **Cadastrar**.
+1. **Primeiro acesso:** abra o link, toque em **Criar conta** e preencha nome, número de celular, equipe, **data de nascimento** e uma senha (mín. 6 caracteres). Toque em **Cadastrar**.
 2. **Entrar nas próximas vezes:** informe número + senha em **Entrar**. O aparelho lembra de você até você tocar em **Sair**.
 3. **Comprar:** na aba **Loja**, veja o "Almoço da semana" (se a administradora cadastrou) e escolha uma categoria (🍬 Doces, 🍮 Sobremesas, 🥪 Lanches, 🥤 Bebidas). Toque no **+** vermelho de cada produto para colocar no carrinho.
 4. **Finalizar:** toque em **Ver carrinho** (barra escura no rodapé), ajuste as quantidades com **−** e **+** e toque em **Finalizar pedido**. Pronto: a compra entra na sua conta do mês e a administradora recebe o aviso na hora.
 5. **Controlar os gastos:** na aba **Meus gastos**, escolha o mês e veja tudo o que consumiu, com data, hora e total.
-6. **Esqueceu a senha?** Se ainda estiver logado, vá em **Meus gastos → Esqueceu a senha? Crie uma nova**, digite a nova senha e salve. Se já saiu da conta e não lembra a senha, peça à administradora (veja "Dúvidas comuns").
-7. A **foto de perfil** aparece no círculo do canto superior direito enquanto você está logado.
+6. **Esqueceu a senha?** Na tela **Entrar**, toque em **Esqueci minha senha**, informe número, **data de nascimento** (a mesma do cadastro) e a nova senha. Só troca se a data for igual. Depois de 5 tentativas erradas, trava por 15 minutos. **Contas antigas** (feitas antes desta função) não têm data: entre com a senha atual e cadastre em **Meus gastos → Cadastre sua data de nascimento** (só uma vez).
+7. O círculo no canto superior direito mostra a **inicial do seu nome** enquanto você está logado.
 
 ### Para a administradora
 1. **Entrar:** aba **Administração** → login e senha da administração. A sessão dura 12 horas.
 2. **Acompanhar o dia:** os quadros coloridos mostram pedidos de hoje, valor retirado hoje, total do mês e quantas pessoas consumiram no mês.
 3. **Usuários cadastrados:** logo abaixo dos quadros, a lista de todas as pessoas cadastradas, **separadas por equipe** (EVA, VIVA, ED, BANCAR, DEV), com número, data do cadastro e quanto cada uma gastou no mês. A lista atualiza sozinha e um aviso 🆕 aparece quando alguém novo se cadastra.
 4. **Pedidos em tempo real:** cada compra feita em qualquer celular ou computador aparece na tabela em até 15 segundos, com aviso e som. O botão **Excluir** remove um pedido lançado por engano.
-5. **Almoço da semana:** informe prato, preço e foto de segunda a sexta e toque em **Salvar cardápio da semana**. Eles aparecem no topo da loja. **Limpar semana** apaga todos.
-6. **Novo produto:** escolha a categoria, digite nome e valor, anexe a foto e toque em **Publicar produto**. Ele aparece na loja com a etiqueta **Novidade** por 14 dias.
+5. **Almoço da semana:** informe prato e preço de segunda a sexta e toque em **Salvar cardápio da semana**. Eles aparecem no topo da loja. **Limpar semana** apaga todos.
+6. **Novo produto:** escolha a categoria, digite nome e valor e toque em **Publicar produto**. Ele aparece na loja com a etiqueta **Novidade** por 14 dias.
 7. **Remover produto:** escolha a categoria, ache o produto e toque em **Remover**. Ele é apagado da loja de todos e aparece o aviso "🗑️ produto foi removido da loja" (os pedidos antigos continuam no histórico).
 8. **Fechamento do mês (todo dia 1):** escolha o mês, toque em **Gerar PDF do fechamento** (separado por equipe, com itens, datas e totais por pessoa) e em **Baixar planilha (CSV)**. Só depois de guardar os arquivos use **Limpar pedidos deste mês**, que apaga os pedidos de vez.
-9. **Trocar login e senha da administração:** no último card, preencha novo login e nova senha e salve.
+9. **Remover um item de um pedido:** na tabela de pedidos em tempo real, toque no **✕** ao lado do item. O total é recalculado; se não sobrar item, o pedido é excluído.
+10. **Armazenamento do banco:** o card **💾 Armazenamento do banco** mostra a % usada (referência: 1 GB do plano grátis da Neon). A transferência mensal só aparece no painel da Neon.
+11. **Trocar login e senha da administração:** no último card, preencha novo login e nova senha e salve.
 
 ### Dúvidas comuns
-- **Funcionário esqueceu a senha e não consegue entrar:** no Neon (SQL Editor) rode `delete from users where phone='NUMERO';` com o número dele. Ele se cadastra de novo com o mesmo número e o histórico de compras continua aparecendo.
+- **Funcionário esqueceu a senha e não consegue entrar:** peça para usar **Esqueci minha senha** (número + data de nascimento). Se a conta é antiga e não tem data cadastrada, no Neon (SQL Editor) rode `delete from users where phone='NUMERO';` com o número dele. Ele se cadastra de novo com o mesmo número e o histórico de compras continua aparecendo.
 - **Esqueci a senha da administração:** no SQL Editor rode `delete from settings where key='admin';` e entre com `ADMIN_LOGIN`/`ADMIN_PASSWORD` da Vercel.
 - **O pedido não apareceu para a administradora:** confirme que ela está logada na aba Administração; a tabela atualiza a cada poucos segundos (15 s).
 - **Funciona em qualquer aparelho?** Sim: o layout se ajusta a celular, tablet e computador.
@@ -132,5 +134,5 @@ Mexeu no código? `git add . && git commit -m "mensagem" && git push` — a Verc
 ## Dicas e problemas comuns
 - **"Erro no servidor"**: confira se `DATABASE_URL` e `JWT_SECRET` existem e se fez Redeploy.
 - **Produto removido volta?** Não volta: ele é apagado do banco. Para recolocar, use "Novo produto".
-- Fotos são reduzidas e guardadas no próprio banco (plano grátis do Neon aguenta bem uma cantina).
-- Senhas dos usuários são criptografadas (bcrypt); quem esqueceu a senha precisa estar logado para trocá-la.
+- O site não usa mais fotos (de perfil, de produto ou do almoço). Isso reduz o espaço e a transferência do banco.
+- Senhas dos usuários são criptografadas (bcrypt); quem esqueceu a senha usa **Esqueci minha senha** (número + data de nascimento).
