@@ -25,25 +25,6 @@ const dt = (t) => new Date(t).toLocaleDateString('pt-BR');
 const hr = (t) => new Date(t).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
 /* Transforma a lista de itens de um pedido em texto: '2x Paçoca, 1x Mentos'. */
 const txt = (items) => items.map((i) => `${i.q}x ${i.n}`).join(', ');
-/* Foto do usuário. Se ele não enviou foto, desenha um círculo laranja com a inicial do nome. */
-const avatar = (u) => u.photo || 'data:image/svg+xml,' + encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 40 40"><rect width="40" height="40" fill="#f5821f"/><text x="20" y="27" font-size="20" text-anchor="middle" fill="#fff">${u.name[0]}</text></svg>`);
-
-/* Reduz a foto antes de enviar (economiza banco e internet) */
-const resize = (file, max = 360) => new Promise((ok) => {
-  const fr = new FileReader();
-  fr.onload = () => {
-    const im = new Image();
-    im.onload = () => {
-      /* k = fator de redução (nunca aumenta a imagem). A foto vira um JPEG pequeno, para pesar pouco no banco. */
-      const k = Math.min(1, max / Math.max(im.width, im.height)), c = document.createElement('canvas');
-      c.width = im.width * k; c.height = im.height * k;
-      c.getContext('2d').drawImage(im, 0, 0, c.width, c.height);
-      ok(c.toDataURL('image/jpeg', 0.72));
-    };
-    im.src = fr.result;
-  };
-  fr.readAsDataURL(file);
-});
 
 /* Toca um 'bip' curto quando chega um pedido novo (se o navegador bloquear o som, ignora). */
 const beep = () => { try { const a = new AudioContext(), o = a.createOscillator(); o.connect(a.destination); o.frequency.value = 880; o.start(); o.stop(a.currentTime + 0.18); } catch { /* sem som */ } };
@@ -214,8 +195,8 @@ export default function App() {
             <small className="d-block fw-bold" style={{ color: '#ffb400', fontSize: '.7rem', fontFamily: 'Work Sans' }}>Pegou, anotou, pagou no dia 1</small>
           </span>
           <div className="d-flex align-items-center gap-2 order-md-last">
-            {/* Foto de perfil no canto superior direito (só aparece logado). */}
-            {user && <img className="avatar" src={avatar(user)} alt="Foto de perfil" />}
+            {/* Círculo com a inicial do nome no canto superior direito (só aparece logado). Não há mais foto de perfil. */}
+            {user && <span className="avatar" title={user.name}>{user.name[0]}</span>}
             <button className="navbar-toggler" aria-label="Menu" onClick={() => setMenu(!menu)}><span className="navbar-toggler-icon" /></button>
           </div>
           {/* Menu: no celular abre/fecha pelo estado 'menu'; no computador fica sempre visível (navbar-expand-md). */}
@@ -245,7 +226,7 @@ export default function App() {
             </div>
           : <Auth onLogin={(u) => { setUser(u); setTab('loja'); }} />)}
         {/* ABA MEUS GASTOS: exige login. */}
-        {tab === 'gas' && (user ? <Spending notify={notify} /> : <div className="alert alert-warning">Faça login na aba Cadastro.</div>)}
+        {tab === 'gas' && (user ? <Spending notify={notify} user={user} onUser={setUser} /> : <div className="alert alert-warning">Faça login na aba Cadastro.</div>)}
         {/* ABA LOJA: exige login. Recebe o carrinho para ele sobreviver à troca de abas. */}
         {tab === 'loja' && (user ? <Shop user={user} prods={prods} week={week} cart={cart} setCart={setCart} notify={notify} /> : <div className="alert alert-warning">Faça login na aba Cadastro para comprar.</div>)}
         {/* ABA ADMINISTRAÇÃO: logada → painel; senão → tela de login da administração. */}
@@ -258,45 +239,57 @@ export default function App() {
 }
 
 /* ---------- cadastro / login ---------- */
-/* CADASTRO E LOGIN. 'up' alterna entre criar conta (true) e entrar (false). O login é o número de celular + senha. */
+/* CADASTRO, LOGIN E "ESQUECI MINHA SENHA". 'mode' escolhe a tela: 'in' = entrar · 'up' = criar conta · 'fp' = esqueci minha senha. */
 function Auth({ onLogin }) {
-  const [up, setUp] = useState(false);
-  /* f = campos do formulário · file = foto escolhida · err = mensagem de erro · busy = enviando. */
-  const [f, setF] = useState({ name: '', phone: '', team: '', password: '' });
-  const [file, setFile] = useState(null);
+  const [mode, setMode] = useState('in');
+  /* f = campos do formulário (birth = data de nascimento AAAA-MM-DD) · err = erro · okMsg = sucesso · busy = enviando. */
+  const [f, setF] = useState({ name: '', phone: '', team: '', birth: '', password: '' });
   const [err, setErr] = useState('');
+  const [okMsg, setOkMsg] = useState('');
   const [busy, setBusy] = useState(false);
   /* Cria o onChange de um campo: set('name') atualiza só f.name. */
   const set = (k) => (e) => setF({ ...f, [k]: e.target.value });
-  /* Envia para o servidor (register ou login). Em caso de sucesso guarda o token no aparelho (localStorage) e avisa o App (onLogin). */
+  /* Troca de tela e limpa as mensagens. */
+  const go = (m) => { setMode(m); setErr(''); setOkMsg(''); };
+  /* Envia para o servidor. Entrar/cadastrar: guarda o token no aparelho e avisa o App (onLogin). Esqueci a senha: só troca se a data de nascimento for igual à do cadastro. */
   const send = async (e) => {
-    e.preventDefault(); setErr(''); setBusy(true);
+    e.preventDefault(); setErr(''); setOkMsg(''); setBusy(true);
     try {
-      const d = await call(up ? 'register' : 'login', { ...f, photo: up && file ? await resize(file, 160) : '' });
-      localStorage.setItem('tk', d.token); onLogin(d.user);
+      if (mode === 'fp') {
+        await call('forgotPassword', { phone: f.phone, birth: f.birth, password: f.password });
+        setF({ ...f, password: '', birth: '' }); setMode('in'); setOkMsg('Senha alterada! Entre com a nova senha.');
+      } else {
+        const d = await call(mode === 'up' ? 'register' : 'login', f);
+        localStorage.setItem('tk', d.token); onLogin(d.user);
+      }
     } catch (x) { setErr(x.message); }
     setBusy(false);
   };
+  const hoje = new Date().toISOString().slice(0, 10);
   return (
     <form className="card p-4 mx-auto" style={{ maxWidth: 520 }} onSubmit={send}>
-      <h2>{up ? 'Criar cadastro' : 'Entrar'}</h2>
-      <p className="text-secondary">{up ? 'Preencha uma vez só.' : 'Use seu número e senha.'}</p>
+      <h2>{mode === 'up' ? 'Criar cadastro' : mode === 'fp' ? 'Esqueci minha senha' : 'Entrar'}</h2>
+      <p className="text-secondary">{mode === 'up' ? 'Preencha uma vez só.' : mode === 'fp' ? 'Informe seu número e a data de nascimento do cadastro.' : 'Use seu número e senha.'}</p>
       {/* Campo Nome — só no cadastro. */}
-      {up && <div className="mb-3"><label className="form-label fw-bold">Nome</label><input className="form-control" value={f.name} onChange={set('name')} required /></div>}
+      {mode === 'up' && <div className="mb-3"><label className="form-label fw-bold">Nome</label><input className="form-control" value={f.name} onChange={set('name')} required /></div>}
       <div className="mb-3"><label className="form-label fw-bold">Número (celular)</label><input className="form-control" inputMode="tel" placeholder="(00) 00000-0000" value={f.phone} onChange={set('phone')} required /></div>
-      {/* Equipe e foto — só no cadastro. A foto é reduzida para 160 px antes de enviar. */}
-      {up && <>
-        <div className="mb-3"><label className="form-label fw-bold">Equipe</label>
-          <select className="form-select" value={f.team} onChange={set('team')} required><option value="">Selecione sua equipe</option>{TEAMS.map((t) => <option key={t}>{t}</option>)}</select></div>
-        <div className="mb-3"><label className="form-label fw-bold">Foto de perfil</label><input className="form-control" type="file" accept="image/*" onChange={(e) => setFile(e.target.files[0])} /></div>
-      </>}
-      <div className="mb-3"><label className="form-label fw-bold">Senha (mín. 6 caracteres)</label><input className="form-control" type="password" minLength={6} value={f.password} onChange={set('password')} required /></div>
-      {/* Mensagem de erro vinda do servidor (ex.: senha incorreta). */}
+      {/* Equipe — só no cadastro. */}
+      {mode === 'up' && <div className="mb-3"><label className="form-label fw-bold">Equipe</label>
+        <select className="form-select" value={f.team} onChange={set('team')} required><option value="">Selecione sua equipe</option>{TEAMS.map((t) => <option key={t}>{t}</option>)}</select></div>}
+      {/* Data de nascimento — no cadastro e no "esqueci minha senha". É ela que confirma quem é a pessoa. */}
+      {mode !== 'in' && <div className="mb-3"><label className="form-label fw-bold">Data de nascimento</label><input className="form-control" type="date" min="1900-01-01" max={hoje} value={f.birth} onChange={set('birth')} required /></div>}
+      <div className="mb-3"><label className="form-label fw-bold">{mode === 'fp' ? 'Nova senha (mín. 6 caracteres)' : 'Senha (mín. 6 caracteres)'}</label><input className="form-control" type="password" minLength={6} value={f.password} onChange={set('password')} required /></div>
+      {/* Mensagens: sucesso (verde) e erro vindo do servidor (vermelho). */}
+      {okMsg && <div className="alert alert-success py-2">{okMsg}</div>}
       {err && <div className="alert alert-danger py-2">{err}</div>}
       <div className="d-grid gap-2 d-sm-flex">
-        <button className="btn btn-primary" disabled={busy}>{busy ? 'Aguarde...' : up ? 'Cadastrar' : 'Entrar'}</button>
-        <button type="button" className="btn btn-outline-primary" onClick={() => { setUp(!up); setErr(''); }}>{up ? 'Já tenho conta' : 'Criar conta'}</button>
+        <button className="btn btn-primary" disabled={busy}>{busy ? 'Aguarde...' : mode === 'up' ? 'Cadastrar' : mode === 'fp' ? 'Trocar senha' : 'Entrar'}</button>
+        {mode === 'fp'
+          ? <button type="button" className="btn btn-outline-primary" onClick={() => go('in')}>Voltar</button>
+          : <button type="button" className="btn btn-outline-primary" onClick={() => go(mode === 'up' ? 'in' : 'up')}>{mode === 'up' ? 'Já tenho conta' : 'Criar conta'}</button>}
       </div>
+      {/* Link "Esqueci minha senha" só na tela de entrar. */}
+      {mode === 'in' && <button type="button" className="btn btn-link px-0 mt-2" onClick={() => go('fp')}>Esqueci minha senha</button>}
     </form>
   );
 }
@@ -309,7 +302,7 @@ function Shop({ user, prods, week, cart, setCart, notify }) {
   const [open, setOpen] = useState(false);
   /* Junta pratos da semana e produtos numa lista única. 'key' é o id do carrinho: 'w:seg' para pratos, número para produtos. */
   const items = [
-    ...week.map((w) => ({ key: 'w:' + w.day, name: `${DAYS.find((d) => d[0] === w.day)?.[1]}: ${w.name}`, price: w.price, photo: w.photo, cat: 'w' })),
+    ...week.map((w) => ({ key: 'w:' + w.day, name: `${DAYS.find((d) => d[0] === w.day)?.[1]}: ${w.name}`, price: w.price, cat: 'w' })),
     ...prods.map((p) => ({ ...p, key: String(p.id) })),
   ];
   /* Dicionário key → item, para achar rápido o produto de cada linha do carrinho. */
@@ -328,11 +321,11 @@ function Shop({ user, prods, week, cart, setCart, notify }) {
     try { await call('order', { items: lines.map(([id, q]) => ({ id, q })) }); setCart({}); setOpen(false); notify('Pedido registrado! ✅'); }
     catch (e) { notify('Erro ao enviar: ' + e.message); }
   };
-  /* Cartão de um produto: foto (ou emoji), nome, preço e botão '+'. A etiqueta Novidade dura 14 dias (12096e5 ms). */
+  /* Cartão de um produto: emoji da categoria, nome, preço e botão '+'. A etiqueta Novidade dura 14 dias (12096e5 ms). */
   const Card = ({ x }) => (
     <div className="col"><div className="card pcard h-100 p-2">
       {x.novo && Date.now() - x.ts < 12096e5 && <span className="badge text-bg-danger tagnew">Novidade</span>}
-      <div className="ph">{x.photo ? <img src={x.photo} alt={x.name} /> : CATS[x.cat]?.[0] || '🍽️'}</div>
+      <div className="ph">{CATS[x.cat]?.[0] || '🍽️'}</div>
       <div className="nm mt-2">{x.name}</div><div className="price">{R(x.price)}</div>
       <button className="btn btn-primary add" aria-label={'Adicionar ' + x.name} onClick={() => add(x.key)}>+</button>
     </div></div>
@@ -376,11 +369,13 @@ function Shop({ user, prods, week, cart, setCart, notify }) {
 
 /* ---------- meus gastos ---------- */
 /* MEUS GASTOS: histórico do usuário por mês + criação de nova senha. */
-function Spending({ notify }) {
+function Spending({ notify, user, onUser }) {
   const [os, setOs] = useState([]);
   const [m, setM] = useState('');
   const [pw, setPw] = useState('');
   const [err, setErr] = useState('');
+  /* bd = data de nascimento digitada (contas antigas ainda não têm; serve para recuperar a senha). */
+  const [bd, setBd] = useState('');
   /* Ao abrir a aba, busca os pedidos do usuário logado. */
   useEffect(() => { call('myOrders').then((d) => setOs(d.orders)).catch(() => {}); }, []);
   /* ms = meses que têm compras (mais recente primeiro) · cur = mês selecionado · list = pedidos desse mês. */
@@ -393,8 +388,20 @@ function Spending({ notify }) {
     try { await call('setPassword', { password: pw }); setPw(''); notify('Senha alterada. Use a nova no próximo login.'); }
     catch (x) { setErr(x.message); }
   };
+  /* Salva a data de nascimento (só uma vez) e atualiza o usuário na tela. */
+  const saveBirth = async (e) => {
+    e.preventDefault(); setErr('');
+    try { await call('setBirth', { birth: bd }); onUser({ ...user, hasBirth: true }); notify('Data de nascimento cadastrada.'); }
+    catch (x) { setErr(x.message); }
+  };
   return (
     <div className="row g-3">
+      {/* AVISO PARA CONTAS ANTIGAS: sem data de nascimento não dá para usar "Esqueci minha senha". */}
+      {!user.hasBirth && <div className="col-12"><form className="card p-3 border-warning" onSubmit={saveBirth}>
+        <h3 className="h5">🎂 Cadastre sua data de nascimento</h3>
+        <p className="text-secondary small mb-2">Ela será pedida se você esquecer a senha. Só pode ser cadastrada uma vez.</p>
+        <div className="d-flex gap-2 flex-wrap"><input className="form-control" style={{ maxWidth: 220 }} type="date" min="1900-01-01" max={new Date().toISOString().slice(0, 10)} value={bd} onChange={(e) => setBd(e.target.value)} required /><button className="btn btn-primary">Salvar</button></div>
+      </form></div>}
       {/* CARD DO HISTÓRICO (ocupa 7/12 em telas grandes e a largura toda no celular). */}
       <div className="col-12 col-lg-7"><div className="card p-3">
         <h2 className="h4">Meus gastos</h2>
@@ -444,16 +451,18 @@ function Admin({ orders, users, prods, week, notify, reload, reloadOrders, known
   const [fm, setFm] = useState(ym(Date.now()));
   /* rc = categoria mostrada na lista de remoção. */
   const [rc, setRc] = useState('doces');
-  /* np = formulário de novo produto · npFile = foto escolhida · fk = muda para limpar o campo de arquivo. */
+  /* np = formulário de novo produto. */
   const [np, setNp] = useState({ cat: 'doces', name: '', price: '' });
-  const [npFile, setNpFile] = useState(null);
-  const [fk, setFk] = useState(0);
   const [cred, setCred] = useState({ login: '', password: '' });
   /* wk = formulário do almoço da semana, já preenchido com o que está salvo no banco. */
   const [wk, setWk] = useState(() => Object.fromEntries(DAYS.map(([k]) => {
     const w = week.find((x) => x.day === k) || {};
-    return [k, { name: w.name || '', price: w.price ? String(w.price).replace('.', ',') : '', photo: w.photo || '' }];
+    return [k, { name: w.name || '', price: w.price ? String(w.price).replace('.', ',') : '' }];
   })));
+  /* du = uso do banco (bytes, limite e tamanho por tabela). Busca ao abrir e quando clicar em Atualizar. */
+  const [du, setDu] = useState(null);
+  const loadUsage = () => call('dbUsage', {}, true).then(setDu).catch(() => {});
+  useEffect(() => { loadUsage(); }, []);
   /* Executa uma ação e avisa o resultado. Se der erro, mostra 'Erro: ...' em vez de quebrar a tela. */
   const run = async (fn, ok) => { try { await fn(); if (ok) notify(ok); } catch (e) { notify('Erro: ' + e.message); } };
 
@@ -473,13 +482,18 @@ function Admin({ orders, users, prods, week, notify, reload, reloadOrders, known
     notify(`🗑️ "${p.name}" foi removido da loja`);
     await reload();
   });
-  /* NOVO PRODUTO: envia categoria, nome, valor e foto reduzida. O servidor marca como 'novo' (etiqueta Novidade). */
+  /* NOVO PRODUTO: envia categoria, nome e valor. O servidor marca como 'novo' (etiqueta Novidade). */
   const addProduct = () => run(async () => {
-    await call('addProduct', { ...np, price: parseFloat(np.price.replace(',', '.')), photo: npFile ? await resize(npFile) : '' }, true);
-    setNp({ ...np, name: '', price: '' }); setNpFile(null); setFk(fk + 1); await reload();
+    await call('addProduct', { ...np, price: parseFloat(np.price.replace(',', '.')) }, true);
+    setNp({ ...np, name: '', price: '' }); await reload();
   }, 'Produto publicado como novidade!');
   /* Salva os pratos de segunda a sexta (dia sem nome fica de fora). */
   const saveWeek = () => run(() => call('saveWeek', { days: Object.fromEntries(Object.entries(wk).map(([k, w]) => [k, { ...w, price: parseFloat(w.price.replace(',', '.')) || 0 }])) }, true).then(reload), 'Cardápio da semana salvo.');
+  /* REMOVER UM ITEM de um pedido: confirma, pede ao servidor (que recalcula o total) e recarrega a tabela. */
+  const removeItem = (o, k) => confirm(`Remover "${o.items[k].n}" do pedido de ${o.name}?`) && run(async () => {
+    await call('removeOrderItem', { id: o.id, idx: k, n: o.items[k].n }, true);
+    await reloadOrders();
+  }, 'Item removido do pedido.');
   /* Apaga os pedidos do mês escolhido. Peça sempre o PDF antes! */
   const clearMonth = () => {
     const n = orders.filter((o) => ym(o.ts) === fm).length;
@@ -495,6 +509,25 @@ function Admin({ orders, users, prods, week, notify, reload, reloadOrders, known
         <Stat c="#2e9b4e" l="Total do mês" v={R(mo.reduce((s, o) => s + o.total, 0))} />
         <Stat c="#2b1810" l="Pessoas no mês" v={new Set(mo.map((o) => o.phone)).size} />
       </div>
+
+      {/* CARD: ARMAZENAMENTO DO BANCO. % = tamanho do banco ÷ 1 GB (limite do plano gratuito da Neon). */}
+      {du && (() => {
+        const pct = du.bytes / du.limit * 100, MB = (b) => (b / 1048576).toLocaleString('pt-BR', { maximumFractionDigits: 1 }) + ' MB';
+        const cor = pct < 70 ? 'bg-success' : pct < 90 ? 'bg-warning' : 'bg-danger';
+        return (
+          <div className="card p-3 mb-3">
+            <div className="d-flex justify-content-between align-items-center flex-wrap gap-2">
+              <h3 className="h5 mb-0">💾 Armazenamento do banco: {pct.toLocaleString('pt-BR', { maximumFractionDigits: 1 })}%</h3>
+              <button className="btn btn-sm btn-outline-primary" onClick={loadUsage}>Atualizar</button>
+            </div>
+            <div className="progress my-2" style={{ height: 18 }} role="progressbar" aria-valuenow={Math.round(pct)} aria-valuemin="0" aria-valuemax="100">
+              <div className={'progress-bar ' + cor} style={{ width: Math.max(pct, 1) + '%' }} />
+            </div>
+            <small className="text-secondary">{MB(du.bytes)} de {MB(du.limit)} (limite do plano gratuito). {du.tables.map((t) => `${t.nome}: ${MB(t.bytes)}`).join(' · ')}</small>
+            <small className="text-secondary d-block">Este valor mostra o espaço dos dados. A transferência mensal da Neon (5 GB no plano gratuito) é medida só no painel da Neon.</small>
+          </div>
+        );
+      })()}
 
       {/* CARD: usuários cadastrados, separados por equipe. Atualiza sozinho (mesma consulta de 4s dos pedidos). "Gasto no mês" vem da soma dos pedidos do mês atual (gastoMes). */}
       <div className="card p-3 mb-3">
@@ -527,19 +560,20 @@ function Admin({ orders, users, prods, week, notify, reload, reloadOrders, known
       {/* CARD: pedidos em tempo real (tabela com todos os pedidos, mais recentes primeiro) */}
       <div className="card p-3 mb-3">
         <h3 className="h5">📋 Pedidos em tempo real</h3>
-        <p className="text-secondary small">Cada compra feita em qualquer aparelho aparece aqui sozinha (atualiza a cada 4 segundos).</p>
+        <p className="text-secondary small">Cada compra feita em qualquer aparelho aparece aqui sozinha (atualiza a cada 15 segundos). Use o ✕ ao lado de um item para removê-lo do pedido.</p>
         <div className="table-responsive"><table className="table table-sm table-striped align-middle">
           <thead className="table-danger"><tr><th>Dia</th><th>Hora</th><th>Equipe</th><th>Nome</th><th>Contato</th><th>Itens</th><th>Total</th><th /></tr></thead>
           <tbody>{orders.slice(0, 60).map((o) => (
             <tr key={o.id}><td>{dt(o.ts)}</td><td>{hr(o.ts)}</td><td><span className="badge team">{o.team}</span></td><td>{o.name}</td><td>{o.phone}</td>
-              <td>{o.items.map((i, k) => <span key={k} className="badge text-bg-light border me-1">{i.q}x {i.n}</span>)}</td>
+              {/* Cada item tem um ✕ para removê-lo do pedido (o total é recalculado; sem itens, o pedido some). */}
+              <td>{o.items.map((i, k) => <span key={k} className="badge text-bg-light border me-1 mb-1 d-inline-flex align-items-center gap-1">{i.q}x {i.n}<button type="button" className="btn-close" style={{ fontSize: '.55rem' }} aria-label={'Remover ' + i.n} title="Remover este item" onClick={() => removeItem(o, k)} /></span>)}</td>
               <td className="fw-bold text-danger">{R(o.total)}</td>
               <td><button className="btn btn-sm btn-outline-primary" onClick={() => confirm('Excluir este pedido?') && run(async () => { await call('deleteOrder', { id: o.id }, true); await reloadOrders(); })}>Excluir</button></td></tr>
           ))}{!orders.length && <tr><td colSpan="8">Nenhum pedido ainda.</td></tr>}</tbody>
         </table></div>
       </div>
 
-      {/* CARD: ALMOÇO DA SEMANA (prato, preço e foto por dia). */}
+      {/* CARD: ALMOÇO DA SEMANA (prato e preço por dia). */}
       <div className="card p-3 mb-3">
         <h3 className="h5">🍽️ Almoço da semana (segunda a sexta)</h3>
         <div className="row g-3">{DAYS.map(([k, n]) => (
@@ -547,11 +581,10 @@ function Admin({ orders, users, prods, week, notify, reload, reloadOrders, known
             <label className="form-label fw-bold">{n}</label>
             <input className="form-control mb-2" placeholder="Nome do prato" value={wk[k].name} onChange={(e) => setWk({ ...wk, [k]: { ...wk[k], name: e.target.value } })} />
             <input className="form-control mb-2" placeholder="Preço (ex: 18,00)" value={wk[k].price} onChange={(e) => setWk({ ...wk, [k]: { ...wk[k], price: e.target.value } })} />
-            <input className="form-control" type="file" accept="image/*" onChange={async (e) => e.target.files[0] && setWk({ ...wk, [k]: { ...wk[k], photo: await resize(e.target.files[0]) } })} />
           </div>))}</div>
         <div className="d-flex gap-2 mt-3 flex-wrap">
           <button className="btn btn-primary" onClick={saveWeek}>Salvar cardápio da semana</button>
-          <button className="btn btn-outline-primary" onClick={() => confirm('Limpar todos os pratos?') && run(async () => { await call('saveWeek', { days: {} }, true); setWk(Object.fromEntries(DAYS.map(([k]) => [k, { name: '', price: '', photo: '' }]))); await reload(); }, 'Semana limpa.')}>Limpar semana</button>
+          <button className="btn btn-outline-primary" onClick={() => confirm('Limpar todos os pratos?') && run(async () => { await call('saveWeek', { days: {} }, true); setWk(Object.fromEntries(DAYS.map(([k]) => [k, { name: '', price: '' }]))); await reload(); }, 'Semana limpa.')}>Limpar semana</button>
         </div>
       </div>
 
@@ -564,7 +597,6 @@ function Admin({ orders, users, prods, week, notify, reload, reloadOrders, known
           <select className="form-select mb-2" value={np.cat} onChange={(e) => setNp({ ...np, cat: e.target.value })}>{Object.entries(CATS).map(([k, v]) => <option key={k} value={k}>{v[0]} {v[1]}</option>)}</select>
           <label className="form-label fw-bold">Nome</label><input className="form-control mb-2" value={np.name} onChange={(e) => setNp({ ...np, name: e.target.value })} />
           <label className="form-label fw-bold">Valor</label><input className="form-control mb-2" placeholder="ex: 4,50" value={np.price} onChange={(e) => setNp({ ...np, price: e.target.value })} />
-          <label className="form-label fw-bold">Foto</label><input key={fk} className="form-control mb-3" type="file" accept="image/*" onChange={(e) => setNpFile(e.target.files[0])} />
           <button className="btn btn-primary" onClick={addProduct}>Publicar produto</button>
         </div></div>
         {/* CARD: REMOVER PRODUTO (lista da categoria escolhida; apaga de verdade no banco). */}
