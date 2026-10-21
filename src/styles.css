@@ -28,8 +28,8 @@ h1,h2,h3,h4,h5,.brand{font-family:Fraunces,Georgia,serif}
 .tagnew{position:absolute;left:.75rem;top:.75rem;z-index:1}
 /* Barra do carrinho fixa no rodapé; respeita a área segura de celulares com 'notch'. */
 .cartbar{position:fixed;left:0;right:0;bottom:0;z-index:1030;padding-bottom:env(safe-area-inset-bottom)}
-/* Foto de perfil redonda no topo. */
-.avatar{width:40px;height:40px;border-radius:50%;object-fit:cover;border:2px solid #ffb400}
+/* Círculo laranja com a inicial do nome, no topo (substitui a foto de perfil). */
+.avatar{width:40px;height:40px;border-radius:50%;border:2px solid #ffb400;background:#f5821f;color:#fff;font-weight:700;display:flex;align-items:center;justify-content:center;text-transform:uppercase}
 /* Selo verde com o nome da equipe. */
 .team{background:#16a085}
 /* Quadros coloridos de estatística no painel da administração. */
