@@ -217,6 +217,8 @@ export default function App() {
 
       {/* CONTEÚDO: mostra só a aba escolhida. 'container' centraliza e limita a largura em telas grandes. */}
       <main className="container py-3">
+        {/* Aviso da data de nascimento: aparece em qualquer aba enquanto a pessoa logada ainda não cadastrou. */}
+        {user && <BirthNotice user={user} onUser={setUser} notify={notify} />}
         {/* ABA CADASTRO: logado → resumo da conta; deslogado → formulário de cadastro/login. */}
         {tab === 'cad' && (user
           ? <div className="card p-4 mx-auto" style={{ maxWidth: 520 }}>
@@ -226,7 +228,7 @@ export default function App() {
             </div>
           : <Auth onLogin={(u) => { setUser(u); setTab('loja'); }} />)}
         {/* ABA MEUS GASTOS: exige login. */}
-        {tab === 'gas' && (user ? <Spending notify={notify} user={user} onUser={setUser} /> : <div className="alert alert-warning">Faça login na aba Cadastro.</div>)}
+        {tab === 'gas' && (user ? <Spending notify={notify} /> : <div className="alert alert-warning">Faça login na aba Cadastro.</div>)}
         {/* ABA LOJA: exige login. Recebe o carrinho para ele sobreviver à troca de abas. */}
         {tab === 'loja' && (user ? <Shop user={user} prods={prods} week={week} cart={cart} setCart={setCart} notify={notify} /> : <div className="alert alert-warning">Faça login na aba Cadastro para comprar.</div>)}
         {/* ABA ADMINISTRAÇÃO: logada → painel; senão → tela de login da administração. */}
@@ -235,6 +237,32 @@ export default function App() {
           : <AdminLogin onOk={() => setIsAdm(true)} />)}
       </main>
     </>
+  );
+}
+
+/* ---------- aviso da data de nascimento ---------- */
+/* AVISO PARA QUEM AINDA NÃO TEM DATA DE NASCIMENTO (contas antigas). Aparece no topo de todas as abas, logo depois do login, com o campo já pronto. A data só pode ser cadastrada uma vez e serve para recuperar a senha em "Esqueci minha senha". */
+function BirthNotice({ user, onUser, notify }) {
+  const [bd, setBd] = useState('');
+  const [err, setErr] = useState('');
+  const [hide, setHide] = useState(false);
+  if (user.hasBirth || hide) return null;
+  const save = async (e) => {
+    e.preventDefault(); setErr('');
+    try { await call('setBirth', { birth: bd }); onUser({ ...user, hasBirth: true }); notify('Data de nascimento cadastrada. Obrigado!'); }
+    catch (x) { setErr(x.message); }
+  };
+  return (
+    <form className="alert alert-warning mb-3" onSubmit={save}>
+      <b>🎂 Cadastre sua data de nascimento</b>
+      <div className="small mb-2">Ela será pedida se você esquecer a senha. Só pode ser cadastrada uma vez, então confira antes de salvar.</div>
+      <div className="d-flex gap-2 flex-wrap align-items-center">
+        <input className="form-control" style={{ maxWidth: 200 }} type="date" min="1900-01-01" max={new Date().toISOString().slice(0, 10)} value={bd} onChange={(e) => setBd(e.target.value)} required aria-label="Data de nascimento" />
+        <button className="btn btn-primary">Salvar</button>
+        <button type="button" className="btn btn-link" onClick={() => setHide(true)}>Agora não</button>
+      </div>
+      {err && <div className="text-danger small mt-2">{err}</div>}
+    </form>
   );
 }
 
@@ -369,13 +397,11 @@ function Shop({ user, prods, week, cart, setCart, notify }) {
 
 /* ---------- meus gastos ---------- */
 /* MEUS GASTOS: histórico do usuário por mês + criação de nova senha. */
-function Spending({ notify, user, onUser }) {
+function Spending({ notify }) {
   const [os, setOs] = useState([]);
   const [m, setM] = useState('');
   const [pw, setPw] = useState('');
   const [err, setErr] = useState('');
-  /* bd = data de nascimento digitada (contas antigas ainda não têm; serve para recuperar a senha). */
-  const [bd, setBd] = useState('');
   /* Ao abrir a aba, busca os pedidos do usuário logado. */
   useEffect(() => { call('myOrders').then((d) => setOs(d.orders)).catch(() => {}); }, []);
   /* ms = meses que têm compras (mais recente primeiro) · cur = mês selecionado · list = pedidos desse mês. */
@@ -388,20 +414,8 @@ function Spending({ notify, user, onUser }) {
     try { await call('setPassword', { password: pw }); setPw(''); notify('Senha alterada. Use a nova no próximo login.'); }
     catch (x) { setErr(x.message); }
   };
-  /* Salva a data de nascimento (só uma vez) e atualiza o usuário na tela. */
-  const saveBirth = async (e) => {
-    e.preventDefault(); setErr('');
-    try { await call('setBirth', { birth: bd }); onUser({ ...user, hasBirth: true }); notify('Data de nascimento cadastrada.'); }
-    catch (x) { setErr(x.message); }
-  };
   return (
     <div className="row g-3">
-      {/* AVISO PARA CONTAS ANTIGAS: sem data de nascimento não dá para usar "Esqueci minha senha". */}
-      {!user.hasBirth && <div className="col-12"><form className="card p-3 border-warning" onSubmit={saveBirth}>
-        <h3 className="h5">🎂 Cadastre sua data de nascimento</h3>
-        <p className="text-secondary small mb-2">Ela será pedida se você esquecer a senha. Só pode ser cadastrada uma vez.</p>
-        <div className="d-flex gap-2 flex-wrap"><input className="form-control" style={{ maxWidth: 220 }} type="date" min="1900-01-01" max={new Date().toISOString().slice(0, 10)} value={bd} onChange={(e) => setBd(e.target.value)} required /><button className="btn btn-primary">Salvar</button></div>
-      </form></div>}
       {/* CARD DO HISTÓRICO (ocupa 7/12 em telas grandes e a largura toda no celular). */}
       <div className="col-12 col-lg-7"><div className="card p-3">
         <h2 className="h4">Meus gastos</h2>
@@ -531,7 +545,7 @@ function Admin({ orders, users, prods, week, notify, reload, reloadOrders, known
 
       {/* CARD: usuários cadastrados, separados por equipe. Atualiza sozinho (mesma consulta de 4s dos pedidos). "Gasto no mês" vem da soma dos pedidos do mês atual (gastoMes). */}
       <div className="card p-3 mb-3">
-        <h3 className="h5">👥 Usuários cadastrados ({users.length})</h3>
+        <h3 className="h5">👥 Usuários cadastrados ({users.length}){users.some((x) => !x.hb) && <span className="badge text-bg-warning ms-2 fs-6">🎂 {users.filter((x) => !x.hb).length} sem data de nascimento</span>}</h3>
         <p className="text-secondary small">Lista atualizada automaticamente e separada por equipe. O valor ao lado de cada nome é o gasto no mês atual.</p>
         <div className="row g-3">
           {TEAMS.map((t) => {
@@ -545,7 +559,7 @@ function Admin({ orders, users, prods, week, notify, reload, reloadOrders, known
                   </div>
                   {lista.map((x) => (
                     <div key={x.phone} className="d-flex justify-content-between gap-2 border-top py-1 small">
-                      <span>{x.name}<br /><span className="text-secondary">{x.phone} · desde {dt(x.ts)}</span></span>
+                      <span>{x.name}<br /><span className="text-secondary">{x.phone} · desde {dt(x.ts)}</span>{!x.hb && <span className="badge text-bg-warning ms-1" title="Ainda não cadastrou a data de nascimento">🎂 sem data</span>}</span>
                       <b>{R(gastoMes[x.phone] || 0)}</b>
                     </div>
                   ))}
