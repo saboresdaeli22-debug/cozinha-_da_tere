@@ -21,6 +21,7 @@ Tempo real: a página consulta a API a cada poucos segundos (15 s na administra�
 api/index.js      → API (login, pedidos, produtos, usuários...). Roda na Vercel.
 api/_lib.js       → conexão com o Neon, criação automática das tabelas, login (JWT)
 api/_catalog.js   → lista inicial de produtos e preços
+api/_users.js     → usuários que já tinham cadastro (sem fotos); carregados no banco uma vez. Dados pessoais: repositório PRIVADO
 src/App.jsx       → telas em React + Bootstrap
 src/main.jsx      → liga o React à página
 src/styles.css    → cores da marca sobre o Bootstrap
