@@ -153,9 +153,9 @@ const actions = {
   /* Lista todos os usuários cadastrados (sem foto, para ficar leve), em ordem alfabética. O painel separa por equipe. */
   async adminUsers(b, u) {
     needAdm(u);
-    const [{ v }] = await sql`select count(*) as v from users`;
+    const [{ v }] = await sql`select count(*)||'-'||count(birth) as v from users`;
     if (b.ver && String(b.ver) === String(v)) return { same: true };
-    const rows = await sql`select phone, name, team, extract(epoch from created_at)*1000 as ts from users order by lower(name)`;
+    const rows = await sql`select phone, name, team, (birth is not null) as hb, extract(epoch from created_at)*1000 as ts from users order by lower(name)`;
     return { users: rows.map((r) => ({ ...r, ts: +r.ts })), ver: String(v) };
   },
   /* Todos os pedidos (até 3000) para a tabela em tempo real, o PDF e a planilha. */
