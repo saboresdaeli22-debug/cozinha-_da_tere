@@ -19,8 +19,12 @@ const needUser = (u) => u?.role === 'user' || bad('Faça login para continuar', 
 const needAdm = (u) => u?.role === 'admin' || bad('Acesso restrito à administração', 403);
 /* Deixa só os números (o telefone é a identidade do usuário). */
 const onlyDigits = (s) => String(s || '').replace(/\D/g, '');
-/* Dados do usuário que podem voltar ao navegador (nunca o hash da senha). */
-const pubUser = (r) => ({ phone: r.phone, name: r.name, team: r.team, photo: r.photo });
+/* Dados do usuário que podem voltar ao navegador (nunca o hash da senha). hasBirth = já tem data de nascimento cadastrada? */
+const pubUser = (r) => ({ phone: r.phone, name: r.name, team: r.team, hasBirth: !!r.birth });
+/* Data de nascimento válida: formato AAAA-MM-DD, entre 1900 e hoje. */
+const okBirth = (s) => /^\d{4}-\d{2}-\d{2}$/.test(String(s)) && !isNaN(Date.parse(s)) && s >= '1900-01-01' && s <= new Date().toISOString().slice(0, 10);
+/* Limite de referência do armazenamento: 1 GB (limite do plano gratuito da Neon por projeto). */
+const LIMIT_BYTES = 1024 ** 3;
 /* Converte para número com 2 casas decimais (aceita texto). */
 const money = (v) => Math.round((parseFloat(v) || 0) * 100) / 100;
 
@@ -32,22 +36,22 @@ const actions = {
     const phone = onlyDigits(b.phone), name = String(b.name || '').trim();
     if (!name || phone.length < 10 || !TEAMS.includes(b.team) || String(b.password || '').length < 6)
       bad('Preencha nome, número, equipe e senha (mín. 6 caracteres).');
+    if (!okBirth(b.birth)) bad('Informe uma data de nascimento válida.');
     if ((await sql`select 1 from users where phone=${phone}`).length) bad('Esse número já está cadastrado.');
     const hash = await bcrypt.hash(b.password, 10);
-    const photo = String(b.photo || '').slice(0, 200000);
-    await sql`insert into users(phone,name,team,photo,hash) values(${phone},${name},${b.team},${photo},${hash})`;
-    return { token: sign({ role: 'user', phone }), user: { phone, name, team: b.team, photo } };
+    await sql`insert into users(phone,name,team,hash,birth) values(${phone},${name},${b.team},${hash},${b.birth})`;
+    return { token: sign({ role: 'user', phone }), user: { phone, name, team: b.team, hasBirth: true } };
   },
   /* Confere número e senha. A mensagem de erro é a mesma para número inexistente e senha errada (não revela qual). */
   async login(b) {
-    const [r] = await sql`select * from users where phone=${onlyDigits(b.phone)}`;
+    const [r] = await sql`select phone,name,team,hash,birth from users where phone=${onlyDigits(b.phone)}`;
     if (!r || !(await bcrypt.compare(String(b.password || ''), r.hash))) bad('Número ou senha incorretos.', 401);
     return { token: sign({ role: 'user', phone: r.phone }), user: pubUser(r) };
   },
   /* Quem sou eu? Usado ao reabrir o site para restaurar a sessão. */
   async me(b, u) {
     needUser(u);
-    const [r] = await sql`select * from users where phone=${u.phone}`;
+    const [r] = await sql`select phone,name,team,birth from users where phone=${u.phone}`;
     if (!r) bad('Sessão inválida', 401);
     return { user: pubUser(r) };
   },
@@ -56,6 +60,28 @@ const actions = {
     needUser(u);
     if (String(b.password || '').length < 6) bad('Mínimo 6 caracteres.');
     await sql`update users set hash=${await bcrypt.hash(b.password, 10)} where phone=${u.phone}`;
+  },
+  /* Cadastra a data de nascimento de quem ainda não tem (contas antigas). Só funciona uma vez: depois não dá para trocar. */
+  async setBirth(b, u) {
+    needUser(u);
+    if (!okBirth(b.birth)) bad('Informe uma data de nascimento válida.');
+    const r = await sql`update users set birth=${b.birth} where phone=${u.phone} and birth is null returning phone`;
+    if (!r.length) bad('A data de nascimento já está cadastrada.');
+  },
+  /* ESQUECI MINHA SENHA (sem login): número + data de nascimento + nova senha. Só troca se a data for igual à do cadastro. Depois de 5 erros seguidos, trava por 15 minutos. */
+  async forgotPassword(b) {
+    const phone = onlyDigits(b.phone);
+    if (String(b.password || '').length < 6) bad('A nova senha precisa ter no mínimo 6 caracteres.');
+    if (!okBirth(b.birth)) bad('Informe uma data de nascimento válida.');
+    const [r] = await sql`select birth, (lock_until is not null and lock_until > now()) as locked from users where phone=${phone}`;
+    if (!r) bad('Número ou data de nascimento incorretos.', 401);
+    if (r.locked) bad('Muitas tentativas erradas. Tente de novo em 15 minutos.', 429);
+    if (!r.birth) bad('Esta conta ainda não tem data de nascimento. Entre com sua senha atual e cadastre em Meus gastos, ou procure a administração.');
+    if (r.birth !== b.birth) {
+      await sql`update users set fails = case when coalesce(fails,0) + 1 >= 5 then 0 else coalesce(fails,0) + 1 end, lock_until = case when coalesce(fails,0) + 1 >= 5 then now() + interval '15 minutes' else lock_until end where phone=${phone}`;
+      bad('Número ou data de nascimento incorretos.', 401);
+    }
+    await sql`update users set hash=${await bcrypt.hash(b.password, 10)}, fails=0, lock_until=null where phone=${phone}`;
   },
   /* Pedidos do próprio usuário (até 500), do mais novo para o mais antigo. ts = data/hora em milissegundos. */
   async myOrders(b, u) {
@@ -75,11 +101,11 @@ const actions = {
       await sql`insert into settings(key,value) values('seeded','true') on conflict do nothing`;
     }
     /* VERSÃO: um texto curto calculado no próprio banco. Se for igual à que o navegador já tem, responde só { same: true } e NÃO baixa fotos de novo (economiza a transferência do Neon). */
-    const [{ v }] = await sql`select (select count(*)||'-'||coalesce(max(id),0)||'-'||coalesce(sum(price),0) from products) || '|' || (select coalesce(string_agg(day||coalesce(name,'')||coalesce(price,0)||md5(coalesce(photo,'')),','),'') from week) as v`;
+    const [{ v }] = await sql`select (select count(*)||'-'||coalesce(max(id),0)||'-'||coalesce(sum(price),0) from products) || '|' || (select coalesce(string_agg(day||coalesce(name,'')||coalesce(price,0),','),'') from week) as v`;
     if (b.ver && b.ver === v) return { same: true };
-    const products = (await sql`select id,cat,name,price,photo,novo, extract(epoch from created_at)*1000 as ts from products order by id`)
+    const products = (await sql`select id,cat,name,price,novo, extract(epoch from created_at)*1000 as ts from products order by id`)
       .map((r) => ({ ...r, price: +r.price, ts: +r.ts }));
-    const week = (await sql`select day,name,price,photo from week`).map((r) => ({ ...r, price: +r.price }));
+    const week = (await sql`select day,name,price from week`).map((r) => ({ ...r, price: +r.price }));
     return { products, week, ver: v };
   },
   /* Registra um pedido. Recalcula tudo pelo banco: nome, preço e total. Limites: até 60 linhas e 50 unidades por item. */
@@ -136,7 +162,7 @@ const actions = {
   async adminOrders(b, u) {
     needAdm(u);
     /* Mesma ideia: só baixa a lista de pedidos se algo mudou (novo, excluído ou limpo). */
-    const [{ v }] = await sql`select count(*)||'-'||coalesce(max(id),0)||'-'||coalesce(sum(total),0) as v from orders`;
+    const [{ v }] = await sql`select count(*)||'-'||coalesce(max(id),0)||'-'||coalesce(sum(total),0)||'-'||coalesce(sum(jsonb_array_length(items)),0) as v from orders`;
     if (b.ver && b.ver === v) return { same: true };
     const rows = await sql`select id,phone,name,team,items,total, extract(epoch from created_at)*1000 as ts from orders order by created_at desc limit 3000`;
     return { orders: rows.map((r) => ({ ...r, total: +r.total, ts: +r.ts })), ver: v };
@@ -149,12 +175,32 @@ const actions = {
     if (!/^\d{4}-\d{2}$/.test(b.month)) bad('Mês inválido.');
     await sql`delete from orders where to_char(created_at at time zone 'America/Sao_Paulo','YYYY-MM') = ${b.month}`;
   },
+  /* Remove UM item de um pedido (botão ✕ na tabela em tempo real). Recalcula o total; se não sobrar item, apaga o pedido. 'idx' = posição do item e 'n' = nome (confere se o pedido não mudou). */
+  async removeOrderItem(b, u) {
+    needAdm(u);
+    const [o] = await sql`select items from orders where id=${+b.id}`;
+    if (!o) bad('Pedido não encontrado (talvez já excluído).', 404);
+    const i = +b.idx;
+    if (!o.items[i] || o.items[i].n !== b.n) bad('O pedido mudou. Atualize a tela e tente de novo.', 409);
+    const items = o.items.filter((_, k) => k !== i);
+    if (!items.length) { await sql`delete from orders where id=${+b.id}`; return { deleted: true }; }
+    const total = money(items.reduce((s, x) => s + x.p * x.q, 0));
+    await sql`update orders set items=${JSON.stringify(items)}::jsonb, total=${total} where id=${+b.id}`;
+    return { deleted: false, total };
+  },
+  /* Tamanho do banco (para a barra de % na administração): total e por tabela, em bytes. */
+  async dbUsage(b, u) {
+    needAdm(u);
+    const [t] = await sql`select pg_database_size(current_database()) as bytes`;
+    const rows = await sql`select c.relname as nome, pg_total_relation_size(c.oid) as bytes from pg_class c where c.relkind='r' and c.relnamespace='public'::regnamespace order by 2 desc`;
+    return { bytes: +t.bytes, limit: LIMIT_BYTES, tables: rows.map((r) => ({ nome: r.nome, bytes: +r.bytes })) };
+  },
   /* Cadastra produto novo com a marca 'novo' (etiqueta Novidade na loja). */
   async addProduct(b, u) {
     needAdm(u);
     const name = String(b.name || '').trim();
     if (!CATS.includes(b.cat) || !name || !(+b.price >= 0)) bad('Informe categoria, nome e valor.');
-    await sql`insert into products(cat,name,price,photo,novo) values(${b.cat},${name},${money(b.price)},${String(b.photo || '').slice(0, 200000)},true)`;
+    await sql`insert into products(cat,name,price,novo) values(${b.cat},${name},${money(b.price)},true)`;
   },
   /* Remove o produto de verdade (DELETE). Pedidos antigos não são afetados porque guardam nome e preço da época. */
   async removeProduct(b, u) { /* remoção de verdade: apaga a linha do banco */
@@ -169,7 +215,7 @@ const actions = {
     await sql`delete from week`;
     for (const d of DAYS) {
       const w = b.days?.[d];
-      if (w?.name) await sql`insert into week(day,name,price,photo) values(${d},${String(w.name).trim()},${money(w.price)},${String(w.photo || '').slice(0, 200000)})`;
+      if (w?.name) await sql`insert into week(day,name,price) values(${d},${String(w.name).trim()},${money(w.price)})`;
     }
   },
 };
